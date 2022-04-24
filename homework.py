@@ -1,6 +1,6 @@
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, fields
 
-from typing import Dict, Type
+from typing import Dict, Type, ClassVar
 
 
 @dataclass
@@ -12,23 +12,23 @@ class InfoMessage:
     distance: float
     speed: float
     calories: float
-    message: str = ('Тип тренировки: {training_type}; '
-                    'Длительность: {duration:.3f} ч.; '
-                    'Дистанция: {distance:.3f} км; '
-                    'Ср. скорость: {speed:.3f} км/ч; '
-                    'Потрачено ккал: {calories:.3f}.')
+    MESSAGE: ClassVar[str] = ('Тип тренировки: {training_type}; '
+                              'Длительность: {duration:.3f} ч.; '
+                              'Дистанция: {distance:.3f} км; '
+                              'Ср. скорость: {speed:.3f} км/ч; '
+                              'Потрачено ккал: {calories:.3f}.')
 
     def get_message(self) -> str:
-        return self.message.format(**asdict(self))
+        return self.MESSAGE.format(**asdict(self))
 
 
 @dataclass
 class Training:
     """Базовый класс тренировки."""
 
-    LEN_STEP: float = field(default=0.65, init=False)
-    M_IN_KM: float = field(default=1000, init=False)
-    MIN_IN_HOUR: float = field(default=60, init=False)
+    LEN_STEP: ClassVar[float] = 0.65
+    M_IN_KM: ClassVar[float] = 1000
+    MIN_IN_HOUR: ClassVar[float] = 60
 
     action: float
     duration: float
@@ -44,7 +44,8 @@ class Training:
 
     def get_spent_calories(self) -> float:
         """Получить количество затраченных калорий."""
-        raise NotImplementedError('Не используем расчет калорий для Training')
+        raise NotImplementedError('Не используем расчет калорий '
+                                  'для {self.__class__.__name__}')
 
     def show_training_info(self) -> InfoMessage:
         """Вернуть информационное сообщение о выполненной тренировке."""
@@ -60,13 +61,13 @@ class Training:
 class Running(Training):
     """Тренировка: бег."""
 
-    COEFF_CALORIE_1: float = field(default=18, init=False)
-    COEFF_CALORIE_2: float = field(default=20, init=False)
+    RUN_SPEED_COEFF1: ClassVar[float] = 18
+    RUN_SPEED_COEFF2: ClassVar[float] = 20
 
     def get_spent_calories(self) -> float:
         """Получить количество затраченных калорий."""
-        return ((self.COEFF_CALORIE_1 * self.get_mean_speed()
-                - self.COEFF_CALORIE_2) * self.weight / self.M_IN_KM
+        return ((self.RUN_SPEED_COEFF1 * self.get_mean_speed()
+                - self.RUN_SPEED_COEFF2) * self.weight / self.M_IN_KM
                 * self.duration * self.MIN_IN_HOUR)
 
 
@@ -74,16 +75,17 @@ class Running(Training):
 class SportsWalking(Training):
     """Тренировка: спортивная ходьба."""
 
-    COEFF_CALORIE_3: float = field(default=0.035, init=False)
-    COEFF_CALORIE_4: float = field(default=0.029, init=False)
+    WALK_WEIGHT_COEF1: ClassVar[float] = 0.035
+    WALK_WEIGHT_COEF2: ClassVar[float] = 0.029
+    WALK_SQUARE: ClassVar[float] = 2
 
     height: float
 
     def get_spent_calories(self) -> float:
         """Получить количество затраченных калорий."""
-        return ((self.COEFF_CALORIE_3 * self.weight
-                + (self.get_mean_speed()**2 // self.height)
-                * self.COEFF_CALORIE_4 * self.weight)
+        return ((self.WALK_WEIGHT_COEF1 * self.weight
+                + (self.get_mean_speed()**self.WALK_SQUARE // self.height)
+                * self.WALK_WEIGHT_COEF2 * self.weight)
                 * self.duration * self.MIN_IN_HOUR)
 
 
@@ -91,9 +93,9 @@ class SportsWalking(Training):
 class Swimming(Training):
     """Тренировка: плавание."""
 
-    LEN_STEP: float = field(default=1.38, init=False)
-    COEFF_CALORIE_5: float = field(default=1.1, init=False)
-    COEFF_CALORIE_6: float = field(default=2, init=False)
+    LEN_STEP: ClassVar[float] = 1.38
+    ADD_SPEED: ClassVar[float] = 1.1
+    WEIGHT_SWIM_COEF: ClassVar[float] = 2
 
     length_pool: float
     count_pool: float
@@ -105,8 +107,8 @@ class Swimming(Training):
 
     def get_spent_calories(self) -> float:
         """Получить количество затраченных калорий."""
-        return ((self.get_mean_speed() + self.COEFF_CALORIE_5)
-                * self.COEFF_CALORIE_6 * self.weight)
+        return ((self.get_mean_speed() + self.ADD_SPEED)
+                * self.WEIGHT_SWIM_COEF * self.weight)
 
 
 def read_package(workout_type: str, data: list) -> Training:
@@ -116,10 +118,13 @@ def read_package(workout_type: str, data: list) -> Training:
         'RUN': Running,
         'WLK': SportsWalking
     }  # словарь описание: класс
-    try:
-        return help_read_package[workout_type](*data)
-    except KeyError:
-        raise KeyError('Проверьте правильность типа тренировки')
+    if workout_type not in help_read_package:
+        raise ValueError(workout_type)
+    if len(data) != len(fields(help_read_package[workout_type])):
+        raise TypeError(f'В данных тренировки {workout_type} передано '
+                        f'неверное количество элементов: {len(data)} вместо '
+                        f'{len(fields(help_read_package[workout_type]))}.')
+    return help_read_package[workout_type](*data)
 
 
 def main(training: Training) -> None:
@@ -135,4 +140,9 @@ if __name__ == '__main__':
     ]
 
     for workout_type, data in packages:
-        main(read_package(workout_type, data))
+        try:
+            main(read_package(workout_type, data))
+        except ValueError as err:
+            print(f'Проверьте правильность типа тренировки {err}')
+        except TypeError as err1:
+            print(err1)
